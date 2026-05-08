@@ -1,114 +1,116 @@
+// youtube-search.js no quites créditos DvWilkerOFC creador de este código
 const axios = require('axios');
 
+// Apikey de cloud con IP de tu internet gay xd (Youtube Data API v3)
+const YOUTUBE_API_KEY = 'AIzaSyBrEzNhCrLssglTZK9XT2bVzMnF80wiZKE';
+
+// Formatear duración ISO 8601 a MM:SS o HH:MM:SS
+function formatDuration(isoDuration) {
+    if (!isoDuration) return "00:00";
+    const match = isoDuration.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+    if (!match) return "00:00";
+    const hours = parseInt(match[1] || 0);
+    const minutes = parseInt(match[2] || 0);
+    const seconds = parseInt(match[3] || 0);
+    if (hours > 0) {
+        return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+    }
+    return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+}
+
+// Formatear fecha para que no haga 404
+function formatPublishedAt(dateString) {
+    if (!dateString) return "N/A";
+    const date = new Date(dateString);
+    return date.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' });
+}
+
 module.exports = function(app) {
-    
-    // Función para obtener API key (opcional, puedes ponerla directamente)
-    function getYouTubeApiKey() {
-        // Puedes poner tu API key aquí directamente o usar variable de entorno
-        return process.env.YOUTUBE_API_KEY || 'AIzaSyDBrbDJAhuamM54a8hLGkUlAC8qcUKS3ss';
-    }
-
-    function formatDuration(isoDuration) {
-        if (!isoDuration) return "00:00";
-
-        const match = isoDuration.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
-        if (!match) return "00:00";
-
-        const hours = parseInt(match[1] || 0, 10);
-        const minutes = parseInt(match[2] || 0, 10);
-        const seconds = parseInt(match[3] || 0, 10);
-
-        const totalMinutes = hours * 60 + minutes;
-        return `${totalMinutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-    }
-
-    function formatPublishedAt(dateString) {
-        if (!dateString) return "N/A";
-        const date = new Date(dateString);
-        return date.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' });
-    }
-
     app.get('/search/youtube', async (req, res) => {
-        const { q } = req.query;
-        
-        if (!q) {
+        const query = req.query.q;
+        let limit = parseInt(req.query.limit) || 20;
+
+        if (isNaN(limit)) limit = 20;
+        if (limit > 50) limit = 50;
+
+        if (!query) {
             return res.status(400).json({
                 status: false,
-                creator: 'DVWILKER',
-                error: 'El parámetro "q" es requerido.',
-                message: 'Please provide a search query: ?q=SEARCH_QUERY'
+                creator: "DVWILKER",
+                error: "Falta el parámetro 'q'",
+                usage: "/search/youtube?q=badbunny&limit=10"
             });
         }
 
         try {
-            const API_KEY = getYouTubeApiKey();
-            
-            if (!API_KEY) {
-                return res.status(503).json({
-                    status: false,
-                    creator: 'DVWILKER',
-                    error: 'YouTube API no está configurada.',
-                    message: 'Define YOUTUBE_API_KEY en variables de entorno o agrega tu API key en el código.'
-                });
-            }
-
-            const searchUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=20&q=${encodeURIComponent(q)}&key=${API_KEY}`;
+            // 1. Buscar videos busca los vídeos con tu q
+            const searchUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=${limit}&q=${encodeURIComponent(query)}&key=${YOUTUBE_API_KEY}`;
             const searchRes = await axios.get(searchUrl);
 
-            if (!searchRes.data.items || searchRes.data.items.length === 0) {
-                return res.status(404).json({
-                    status: false,
-                    creator: 'DVWILKER',
-                    error: 'No se encontraron resultados',
-                    message: 'No videos found for your search query'
+            const items = searchRes.data.items || [];
+            if (items.length === 0) {
+                return res.json({
+                    status: true,
+                    creator: "DVWILKER",
+                    query: query,
+                    total_results: 0,
+                    result: []
                 });
             }
 
-            const videoIds = searchRes.data.items.map(item => item.id.videoId).join(',');
-            const channelIds = searchRes.data.items.map(item => item.snippet.channelId);
+            // 2. Obtener IDs de videos solo ID para descargar y link
+            const videoIds = items.map(item => item.id.videoId).join(',');
 
-            const videosUrl = `https://www.googleapis.com/youtube/v3/videos?part=snippet,statistics,contentDetails&id=${videoIds}&key=${API_KEY}`;
-            const videosRes = await axios.get(videosUrl);
+            // 3. Obtener detalles (duración, vistas, estadísticas)
+            const detailsUrl = `https://www.googleapis.com/youtube/v3/videos?part=snippet,statistics,contentDetails&id=${videoIds}&key=${YOUTUBE_API_KEY}`;
+            const detailsRes = await axios.get(detailsUrl);
 
-            const uniqueChannelIds = [...new Set(channelIds)].join(',');
-            const channelsUrl = `https://www.googleapis.com/youtube/v3/channels?part=statistics&id=${uniqueChannelIds}&key=${API_KEY}`;
-            const channelsRes = await axios.get(channelsUrl);
+            // 4. Obtener suscriptores de los canales
+            const channelIds = [...new Set(items.map(item => item.snippet.channelId))].join(',');
+            let channelMap = {};
 
-            const channelMap = {};
-            channelsRes.data.items.forEach(channel => {
-                channelMap[channel.id] = channel.statistics.subscriberCount;
+            if (channelIds) {
+                const channelsUrl = `https://www.googleapis.com/youtube/v3/channels?part=statistics&id=${channelIds}&key=${YOUTUBE_API_KEY}`;
+                const channelsRes = await axios.get(channelsUrl);
+                channelsRes.data.items.forEach(channel => {
+                    channelMap[channel.id] = channel.statistics.subscriberCount;
+                });
+            }
+
+            // 5. Construir resultados
+            const results = detailsRes.data.items.map(video => {
+                const snippet = video.snippet;
+                const stats = video.statistics || {};
+
+                return {
+                    title: snippet.title || "Sin título",
+                    channel: snippet.channelTitle || "Desconocido",
+                    channelId: snippet.channelId || "",
+                    subscribers: channelMap[snippet.channelId] ? parseInt(channelMap[snippet.channelId]).toLocaleString() : "N/A",
+                    publishedAt: formatPublishedAt(snippet.publishedAt),
+                    duration: formatDuration(video.contentDetails.duration),
+                    views: stats.viewCount ? parseInt(stats.viewCount).toLocaleString() : "0",
+                    likes: stats.likeCount ? parseInt(stats.likeCount).toLocaleString() : "0",
+                    comments: stats.commentCount ? parseInt(stats.commentCount).toLocaleString() : "0",
+                    thumbnail: snippet.thumbnails?.high?.url || snippet.thumbnails?.default?.url || "",
+                    url: `https://www.youtube.com/watch?v=${video.id}`
+                };
             });
 
-            const ytTracks = videosRes.data.items.map(video => ({
-                title: video.snippet.title,
-                description: video.snippet.description,
-                channel: video.snippet.channelTitle,
-                channelId: video.snippet.channelId,
-                subscribers: channelMap[video.snippet.channelId] || "N/A",
-                publishedAt: formatPublishedAt(video.snippet.publishedAt),
-                duration: formatDuration(video.contentDetails.duration),
-                views: video.statistics.viewCount || 0,
-                likes: video.statistics.likeCount || 0,
-                comments: video.statistics.commentCount || 0,
-                thumbnail: video.snippet.thumbnails?.high?.url || video.snippet.thumbnails?.default?.url,
-                url: `https://www.youtube.com/watch?v=${video.id}`
-            }));
-
-            res.status(200).json({
+            return res.json({
                 status: true,
-                creator: 'DVWILKER',
-                query: q,
-                total_results: ytTracks.length,
-                result: ytTracks
+                creator: "DVWILKER",
+                query: query,
+                total_results: results.length,
+                result: results
             });
 
         } catch (error) {
-            console.error('YouTube API Error:', error.response?.data || error.message);
-            res.status(500).json({
+            console.error('[YouTube API Error]', error.response?.data || error.message);
+            return res.status(500).json({
                 status: false,
-                creator: 'DVWILKER',
-                error: 'Ocurrió un error en el servidor.',
-                message: error.response?.data?.error?.message || error.message
+                creator: "DVWILKER",
+                error: error.response?.data?.error?.message || "Ocurrió un error en el servidor"
             });
         }
     });
