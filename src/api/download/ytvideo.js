@@ -1,111 +1,130 @@
-const axios = require('axios');
+const axios = require("axios");
+const crypto = require("crypto");
 
-module.exports = function(app) {
-    
-    async function downloadYouTubeVideo(url, format = "360") {
-        try {
-            const downloadResp = await axios.get(
-                "https://p.savenow.to/ajax/download.php",
-                {
-                    params: {
-                        copyright: 0,
-                        format,
-                        url,
-                        api: "dfcb6d76f2f6a9894gjkege8a4ab232222"
-                    },
-                    headers: {
-                        Accept: "application/json",
-                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
-                    }
-                }
-            );
-
-            const data = downloadResp.data;
-            if (!data.success || !data.id) {
-                return { success: false, error: "No se pudo iniciar la descarga" };
+class YouTubeVideoDownloader {
+    constructor() {
+        this.ky = 'C5D58EF67A7584E4A29F6C35BBC4EB12';
+        this.fmt = ['144', '240', '360', '480', '720', '1080'];
+        this.m = /^((?:https?:)?\/\/)?((?:www|m|music)\.)?(?:youtube\.com|youtu\.be)\/(?:watch\?v=)?(?:embed\/)?(?:v\/)?(?:shorts\/)?([a-zA-Z0-9_-]{11})/;
+        this.is = axios.create({
+            headers: {
+                'content-type': 'application/json',
+                'origin': 'https://yt.savetube.me',
+                'user-agent': 'Mozilla/5.0 (Android 15; Mobile; SM-F958; rv:130.0) Gecko/130.0 Firefox/130.0'
             }
-
-            const downloadId = data.id;
-            let downloadUrl = null;
-            let progressData = null;
-
-            while (!downloadUrl) {
-                const progressResp = await axios.get(
-                    "https://p.savenow.to/api/progress",
-                    {
-                        params: { id: downloadId },
-                        headers: { Accept: "application/json" }
-                    }
-                );
-
-                progressData = progressResp.data;
-                if (progressData.success === 1 && progressData.download_url) {
-                    downloadUrl = progressData.download_url;
-                } else {
-                    await new Promise((resolve) => setTimeout(resolve, 1000));
-                }
-            }
-
-            return {
-                success: true,
-                title: data.info?.title,
-                thumbnail: data.info?.image,
-                download_url: downloadUrl,
-                alternative_downloads: progressData.alternative_download_urls || []
-            };
-        } catch (err) {
-            return { success: false, error: err.message };
-        }
+        });
     }
 
-    // Endpoint para descargar video
+    async decrypt(enc) {
+        const sr = Buffer.from(enc, 'base64');
+        const ky = Buffer.from(this.ky, 'hex');
+        const iv = sr.slice(0, 16);
+        const dt = sr.slice(16);
+        const dc = crypto.createDecipheriv('aes-128-cbc', ky, iv);
+        return JSON.parse(Buffer.concat([dc.update(dt), dc.final()]).toString());
+    }
+
+    async getCdn() {
+        const response = await this.is.get("https://media.savetube.vip/api/random-cdn");
+        if (!response.data) return { status: false, msg: "No se pudo obtener CDN" };
+        return { status: true, data: response.data.cdn };
+    }
+
+    async download(url, quality = '360') {
+        const id = url.match(this.m)?.[3];
+        if (!id) return { status: false, msg: "No se pudo extraer el ID del video" };
+        if (!quality || !this.fmt.includes(quality)) {
+            return { status: false, msg: "Formato no soportado", formats: this.fmt };
+        }
+
+        const cdn = await this.getCdn();
+        if (!cdn.status) return cdn;
+
+        // Obtener información del video
+        const infoRes = await this.is.post(`https://${cdn.data}/v2/info`, {
+            url: `https://www.youtube.com/watch?v=${id}`
+        });
+        const decrypted = await this.decrypt(infoRes.data.data);
+
+        // Obtener enlace de descarga
+        const dlRes = await this.is.post(`https://${cdn.data}/download`, {
+            id: id,
+            downloadType: 'video',
+            quality: quality,
+            key: decrypted.key
+        });
+
+        return {
+            status: true,
+            title: decrypted.title,
+            thumbnail: decrypted.thumbnail || `https://i.ytimg.com/vi/${id}/hqdefault.jpg`,
+            duration: decrypted.duration,
+            quality: quality + 'p',
+            download_url: dlRes.data.data.downloadUrl
+        };
+    }
+}
+
+module.exports = function(app) {
     app.get('/download/ytvideo', async (req, res) => {
-        const { url, quality = '360' } = req.query;
-        const endpointPrefix = req.baseUrl || '';
+        const url = req.query.url;
+        const quality = req.query.quality || '360';
 
         if (!url) {
             return res.status(400).json({
                 status: false,
-                creator: "DVWILKER",
-                error: "URL parameter is required",
-                message: "Please provide a YouTube URL: ?url=YOUTUBE_URL"
+                creator: "DVLYONN",
+                error: "Falta el parámetro 'url'",
+                usage: "/download/ytvideo?url=YOUTUBE_URL&quality=360"
+            });
+        }
+
+        const validQualities = ['144', '240', '360', '480', '720', '1080'];
+        if (!validQualities.includes(quality)) {
+            return res.status(400).json({
+                status: false,
+                creator: "DVLYONN",
+                error: `Calidad inválida. Usa: ${validQualities.join(', ')}`,
+                usage: "/download/ytvideo?url=YOUTUBE_URL&quality=360"
             });
         }
 
         try {
-            const result = await downloadYouTubeVideo(url, quality);
+            const downloader = new YouTubeVideoDownloader();
+            const result = await downloader.download(url, quality);
 
-            if (!result.success) {
+            if (!result.status) {
                 return res.status(500).json({
                     status: false,
-                    creator: "DVWILKER",
-                    error: result.error
+                    creator: "DVLYONN",
+                    error: result.msg || "Error al procesar la descarga"
                 });
             }
 
-            // Si se solicita descarga directa
+            // Descarga directa
             if (req.query.download === 'true') {
                 return res.redirect(result.download_url);
             }
 
+            // Devolver JSON con la información
             return res.json({
                 status: true,
                 creator: "DVWILKER",
                 result: {
                     title: result.title,
                     thumbnail: result.thumbnail,
-                    quality: quality + 'p',
+                    duration: result.duration,
+                    quality: result.quality,
                     format: "MP4",
-                    download_url: result.download_url,
-                    alternative_downloads: result.alternative_downloads,
-                    api_download: `${endpointPrefix}/download/ytvideo?url=${encodeURIComponent(url)}&quality=${quality}&download=true`
+                    download_url: result.download_url
                 }
             });
-        } catch (e) {
+        } catch (error) {
+            console.error('[YouTube Video Error]', error.message);
             return res.status(500).json({
                 status: false,
                 creator: "DVWILKER",
-                error: e.message || "Unknown error"
+                error: error.message
             });
         }
     });
