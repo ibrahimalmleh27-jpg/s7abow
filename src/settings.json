@@ -1,11 +1,11 @@
 {
-  "name": "GohanApi",
+  "name": "s7adowApi",
   "version": "1.0.2",
   "description": "Todo lo que imaginas, un request de distancia.",
   "header": {
     "status": "ONLINE",
     "imageSrc": [
-      "https://files.catbox.moe/v7gddq.jpg"
+      "http://s7adow-production.up.railway.app/uploads/m7tcu9.png"
     ],
     "imageSize": {
       "mobile": "80%",
@@ -14,17 +14,17 @@
     }
   },
   "apiSettings": {
-    "creator": "dvwilker  -  Copyright Api Gohan 2026",
+    "creator": "dvwilker  -  Copyright Api s7adow 2026",
     "limit": "5500"
   },
   "links": [
     {
       "name": "Source Code",
-      "url": "https://github.com/dvwilker/Api-Gohan/"
+      "url": "https://github.com/dvwilker/Api-s7adow/"
     },
     {
       "name": "Contact Me",
-      "url": "https://wa.me/5492644138998"
+      "url": "https://wa.me/201017274961"
     }
   ],
   "categories": [
@@ -104,6 +104,17 @@
           "innerDesc": "🖼️ Mejora la calidad de tus imágenes a HD con IA\n\nMétodo: POST\nFormato: multipart/form-data\nParámetro: image (el archivo)\nLímite: 10MB\nFormatos: JPG, PNG, WEBP\n\nEjemplo:\ncurl -X POST -F \"image=@foto.jpg\" /tools/image-hd"
         }
       ]
+    },
+
+    {
+      {
+  "name": "📤 Upload Tools",
+  "items": [
+    {
+      "name": "Shadow File Upload",
+      "desc": "Upload any file and get a direct link",
+      "path": "/upload/shadow",
+      "innerDesc": "📤 File Upload API\n\nMethod: POST\nEndpoint: /upload/shadow\nForm-data:\n• file: <your file>\n\nThis API sends your file to:\nhttps://s7adow-production.up.railway.app/api/upload\n\nReturns:\n• status\n• url (direct link)\n• filename\n• size"
     }
   ]
 }
