@@ -105,16 +105,16 @@
         }
       ]
     },
-
     {
-      {
-  "name": "📤 Upload Tools",
-  "items": [
-    {
-      "name": "Shadow File Upload",
-      "desc": "Upload any file and get a direct link",
-      "path": "/upload/shadow",
-      "innerDesc": "📤 File Upload API\n\nMethod: POST\nEndpoint: /upload/shadow\nForm-data:\n• file: <your file>\n\nThis API sends your file to:\nhttps://s7adow-production.up.railway.app/api/upload\n\nReturns:\n• status\n• url (direct link)\n• filename\n• size"
+      "name": "📤 Upload Tools",
+      "items": [
+        {
+          "name": "Shadow File Upload",
+          "desc": "Upload any file and get a direct link",
+          "path": "/upload/shadow",
+          "innerDesc": "📤 File Upload API\n\nMethod: POST\nEndpoint: /upload/shadow\nForm-data:\n• file: <your file>\n\nThis API sends your file to:\nhttps://s7adow-production.up.railway.app/api/upload\n\nReturns:\n• status\n• url (direct link)\n• filename\n• size"
+        }
+      ]
     }
   ]
 }
